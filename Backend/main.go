@@ -3,47 +3,62 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/abdulhameedsk/URL-Shortner/api/middleware"
 	"github.com/abdulhameedsk/URL-Shortner/api/routes/Scam"
 	"github.com/abdulhameedsk/URL-Shortner/api/routes/User"
 	"github.com/abdulhameedsk/URL-Shortner/api/routes/shorten"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		panic(err)
+	if err := godotenv.Load(); err != nil {
+		log.Println(".env not loaded (continuing):", err)
 	}
 
-	router := gin.Default()
+	// Gin with logger & recovery
+	router := gin.New()
+	router.Use(gin.Logger(), gin.Recovery())
+
+	// CORS so frontend (Vite default 5173) can call API
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	setupRouters(router)
+
 	port := os.Getenv("APP_PORT")
 	if port == "" {
-		port = "8080"
+		port = "8000" // default aligned with docker-compose & frontend axios
 	}
-	log.Fatal(router.Run(":" + port)) //fatal is used to To log the error and stop the app if starting the server fails and we use ":" to with out : This tries to bind to a UNIX socket named "8080", not a TCP port! That's not what you want.:8080 tells Gin to listen on TCP port 8080 on all interfaces (i.e., 0.0.0.0:8080).This is the correct way to start an HTTP server on a specific port.
-
+	log.Printf("Starting server on :%s", port)
+	log.Fatal(router.Run(":" + port))
 }
 
 func setupRouters(router *gin.Engine) {
+	// Auth
 	router.POST("/signup", User.Signup)
 	router.POST("/login", User.Login)
 
-	// ✅ Public Routes — No auth needed
+	// Public URL & scam routes
 	router.POST("/api/v1", shorten.ShortenURL)
 	router.GET("/api/v1/:shortID", shorten.GetByShortID)
 	router.GET("/api/v1/getVerifiedScams", Scam.GetVerifiedScams)
 	router.GET("/api/v1/GetScams", Scam.GetScams)
 
-	// ✅ Protected Routes — Require JWT
+	// Protected (JWT)
 	protected := router.Group("/api/v1")
 	protected.Use(middleware.JWTAuthMiddleware())
-
-	protected.PUT("/:shortID", shorten.EditURL)
-	protected.DELETE("/:shortID", shorten.DeleteURL)
+	protected.PUT("/:shortID", shorten.EditURL)      // fixed path
+	protected.DELETE("/:shortID", shorten.DeleteURL) // fixed path
 	protected.POST("/addTag", shorten.AddTag)
 	protected.POST("/addAdmin", Scam.AddAdmin)
 	protected.POST("/AddScams", Scam.AddScam)

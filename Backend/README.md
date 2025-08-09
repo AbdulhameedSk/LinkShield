@@ -89,7 +89,7 @@ cd url-shortener
 ### ▶️ Run with Docker Compose
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 This will:
